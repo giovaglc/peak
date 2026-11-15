@@ -1,6 +1,6 @@
 # Peak
 
-**En producción:** <https://notas-faltas-giovanni.netlify.app>
+**En producción:** <https://giovaglc.github.io/peak/>
 
 > El proyecto de Netlify mantiene el nombre `notas-faltas-giovanni` para no cambiar la URL.
 
@@ -58,11 +58,11 @@ La app convierte esos porcentajes en número de faltas permitidas y avisa cuando
 
 ## Publicar en Netlify (gratis)
 
-El sitio ya está publicado: <https://notas-faltas-giovanni.netlify.app> (proyecto `notas-faltas-giovanni`).
+El sitio ya está publicado: <https://giovaglc.github.io/peak/> (proyecto `notas-faltas-giovanni`).
 
 ### Actualizar la web
 
-1. Entra en <https://app.netlify.com/projects/notas-faltas-giovanni/overview> con tu cuenta.
+1. Entra en <https://giovaglc.github.io/peak/> con tu cuenta.
 2. Arrastra la carpeta `NotasFaltas` (o el `.zip` con `index.html`, `style.css`, `app.js`) sobre la zona de drop de la página del proyecto.
 3. Netlify publica los cambios en la misma URL en unos segundos.
 
