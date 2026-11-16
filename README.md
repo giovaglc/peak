@@ -39,6 +39,18 @@ nota final     = media exámenes × (peso exámenes/100) + media trabajos × (pe
 Los pesos de exámenes y trabajos se configuran en **materia → Ajustes** y deben sumar 100 %.
 Si una de las dos partes no tiene elementos, la nota final usa solo la parte que sí tiene datos.
 
+## Años y trimestres
+
+En el menú **Años y trimestres** (☰ en PC, *Más* en móvil) se crean los cursos y sus trimestres:
+
+- Las **materias pertenecen al año**: al cambiar de trimestre sigues viendo las mismas materias.
+- Cada **evaluación pertenece a un trimestre**: notas, pendientes, calendario y gráficos se filtran por el trimestre elegido.
+- Las **faltas y la asistencia** son del año completo.
+- No se puede borrar un año con materias ni un trimestre con evaluaciones, y siempre queda al menos un año y un trimestre.
+- Al renombrar un año o un trimestre se actualizan sus materias y evaluaciones.
+
+La estructura se guarda en `localStorage` (`peak-course`), entra en la copia exportada y se sincroniza con la nube.
+
 ## Faltas
 
 En **Ajustes** de cada materia defines:

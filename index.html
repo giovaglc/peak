@@ -11,8 +11,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Plus+Jakarta+Sans:wght@600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20261116a">
-  <link rel="stylesheet" href="style-mobile.css?v=20261116a">
+  <link rel="stylesheet" href="style.css?v=20261116b">
+  <link rel="stylesheet" href="style-mobile.css?v=20261116b">
   <script>
     // Evita el parpadeo de tema: fija el tema antes de pintar.
     try {
@@ -29,7 +29,7 @@
     // Auto-actualizacion: si se publica una version nueva, recarga una sola vez
     // para saltarse la cache de GitHub Pages (max-age=600).
     (function () {
-      var BUILD = '20261116a';
+      var BUILD = '20261116b';
       try {
         fetch('version.json?ts=' + Date.now(), { cache: 'no-store' })
           .then(function (r) { return r.ok ? r.json() : null; })
@@ -61,6 +61,10 @@
         <button class="icon-btn" type="button" data-close-mobile-sheet aria-label="Cerrar"><span class="ico-x"></span></button>
       </div>
       <div class="mobile-sheet-body">
+        <button class="mobile-sheet-row" type="button" data-open-course>
+          <span class="ico-layers"></span>
+          <span>Años y trimestres</span>
+        </button>
         <button class="mobile-sheet-row" type="button" id="mobileSyncBtn">
           <span class="ico-cloud"></span>
           <span>Cuenta y sincronización</span>
@@ -120,6 +124,9 @@
       <span class="ico-layers"></span><span>Calendario</span>
     </button>
     <div class="desktop-menu-sep"></div>
+    <button class="desktop-menu-row" type="button" data-open-course>
+      <span class="ico-layers"></span><span>Años y trimestres</span>
+    </button>
     <button class="desktop-menu-row" type="button" id="desktopSyncBtn">
       <span class="ico-cloud"></span><span>Sincronizar</span>
     </button>
@@ -229,9 +236,8 @@
         </div>
         <div class="year-term-bar">
           <select id="yearSelect" class="yt-select" aria-label="Año escolar"></select>
-          <button class="icon-btn" type="button" id="addYearBtn" aria-label="Nuevo año" title="Nuevo año">+</button>
           <select id="termSelect" class="yt-select" aria-label="Trimestre"></select>
-          <button class="icon-btn" type="button" id="addTermBtn" aria-label="Nuevo trimestre" title="Nuevo trimestre">+</button>
+          <button class="icon-btn" type="button" data-open-course aria-label="Años y trimestres" title="Años y trimestres"><span class="ico-layers"></span></button>
         </div>
         <div class="filters" id="subjectFilters" role="tablist" aria-label="Filtrar materias">
           <button class="filter is-active" type="button" data-filter="all" role="tab" aria-selected="true">Todas</button>
@@ -259,6 +265,38 @@
       <p>Datos guardados en este dispositivo · <button class="link-btn" type="button" id="footExport">hacer copia de seguridad</button></p>
     </footer>
   </main>
+
+  <!-- ================= AÑOS Y TRIMESTRES ================= -->
+  <div class="modal" id="courseModal" role="dialog" aria-modal="true" aria-labelledby="courseModalTitle">
+    <div class="sheet sheet-wide">
+      <header class="sheet-head">
+        <h2 id="courseModalTitle">Años y trimestres</h2>
+        <button class="icon-btn" type="button" data-close="courseModal" aria-label="Cerrar"><span class="ico-x"></span></button>
+      </header>
+      <div class="sheet-body">
+        <p class="hint">Las materias son del año: al cambiar de trimestre sigues viendo las mismas materias, pero cada trimestre tiene sus propias evaluaciones y notas.</p>
+        <div class="course-grid">
+          <section class="course-col">
+            <h3 class="course-title">Años escolares</h3>
+            <ul class="course-list" id="courseYearsList"></ul>
+            <form class="course-add" id="newYearForm" autocomplete="off">
+              <input type="text" id="newYearName" placeholder="2027-2028" maxlength="20" aria-label="Nombre del nuevo año escolar">
+              <input type="number" id="newYearTerms" min="1" max="12" step="1" value="3" aria-label="Número de trimestres">
+              <button class="btn btn-primary btn-sm" type="submit">Crear año</button>
+            </form>
+          </section>
+          <section class="course-col">
+            <h3 class="course-title">Trimestres de <span id="courseYearLabel">—</span></h3>
+            <ul class="course-list" id="courseTermsList"></ul>
+            <form class="course-add" id="newTermForm" autocomplete="off">
+              <input type="text" id="newTermName" placeholder="Trimestre 4" maxlength="40" aria-label="Nombre del nuevo trimestre">
+              <button class="btn btn-primary btn-sm" type="submit">Añadir trimestre</button>
+            </form>
+          </section>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <!-- ================= SYNC LOGIN ================= -->
   <div class="modal" id="syncModal" role="dialog" aria-modal="true" aria-labelledby="syncModalTitle">
@@ -729,6 +767,6 @@
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-  <script src="app.js?v=20261116a"></script>
+  <script src="app.js?v=20261116b"></script>
 </body>
 </html>

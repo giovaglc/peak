@@ -6,6 +6,7 @@
 const STORAGE_KEY = 'notas-faltas-v2';
 const LEGACY_KEY = 'gradeManagerData';
 const THEME_KEY = 'notas-faltas-theme';
+const COURSE_KEY = 'peak-course';
 
 // Supabase config
 const SUPABASE_URL = 'https://abksonqomnjnpleewfyw.supabase.co';
@@ -115,6 +116,33 @@ const defaultAcademicYear = () => {
   const m = now.getMonth();
   if (m >= 8) return y + '-' + (y + 1);
   return (y - 1) + '-' + y;
+};
+
+const DEFAULT_TERMS = ['Trimestre 1', 'Trimestre 2', 'Trimestre 3'];
+
+const defaultCourse = () => ({
+  years: { [defaultAcademicYear()]: DEFAULT_TERMS.slice() }
+});
+
+const normalizeCourse = (value) => {
+  const out = { years: {} };
+  const src = value && typeof value === 'object' && value.years && typeof value.years === 'object'
+    ? value.years
+    : null;
+  if (!src) return out;
+
+  Object.keys(src).forEach((rawYear) => {
+    const year = String(rawYear || '').trim().slice(0, 20);
+    if (!year) return;
+    const terms = Array.isArray(src[rawYear]) ? src[rawYear] : [];
+    const clean = [];
+    terms.forEach((rawTerm) => {
+      const term = String(rawTerm || '').trim().slice(0, 40);
+      if (term && !clean.includes(term)) clean.push(term);
+    });
+    out.years[year] = clean;
+  });
+  return out;
 };
 
 
@@ -232,6 +260,7 @@ const prettyNumber = (n) => (Number.isInteger(round1(n)) ? String(round1(n)) : r
 class Store {
   constructor() {
     this.subjects = this.load();
+    this.course = this.loadCourse();
     this.currentId = null;
   }
 
@@ -243,6 +272,137 @@ class Store {
       console.warn('No se pudo leer el almacenamiento', err);
     }
     return this.migrateLegacy();
+  }
+
+  loadCourse() {
+    let stored = null;
+    try {
+      const raw = localStorage.getItem(COURSE_KEY);
+      if (raw) stored = normalizeCourse(JSON.parse(raw));
+    } catch (err) {
+      console.warn('No se pudo leer el curso', err);
+    }
+
+    const course = stored || { years: {} };
+    if (!Object.keys(course.years).length) {
+      const seed = defaultCourse();
+      Object.keys(seed.years).forEach((year) => { course.years[year] = seed.years[year].slice(); });
+    }
+
+    this.subjects.forEach((s) => {
+      if (!course.years[s.year]) course.years[s.year] = [];
+      [...s.exams, ...s.works].forEach((item) => {
+        const term = item.term || s.term || 'Trimestre 1';
+        if (!course.years[s.year].includes(term)) course.years[s.year].push(term);
+      });
+    });
+
+    Object.keys(course.years).forEach((year) => {
+      if (!course.years[year].length) course.years[year].push('Trimestre 1');
+    });
+    return course;
+  }
+
+  saveCourse() {
+    try {
+      localStorage.setItem(COURSE_KEY, JSON.stringify(this.course));
+      localStorage.setItem(MODIFIED_KEY, String(Date.now()));
+    } catch (err) {
+      toast('No se pudieron guardar los años y trimestres', true);
+      console.error(err);
+    }
+    if (window.app && typeof window.app.schedulePush === 'function') {
+      window.app.schedulePush();
+    }
+  }
+
+  mergeCourseWithSubjects() {
+    this.subjects.forEach((s) => {
+      if (!this.course.years[s.year]) this.course.years[s.year] = [];
+      [...s.exams, ...s.works].forEach((item) => {
+        const term = item.term || s.term || 'Trimestre 1';
+        if (!this.course.years[s.year].includes(term)) this.course.years[s.year].push(term);
+      });
+    });
+    Object.keys(this.course.years).forEach((year) => {
+      if (!this.course.years[year].length) this.course.years[year].push('Trimestre 1');
+    });
+  }
+
+  yearNames() {
+    return Object.keys(this.course.years).sort();
+  }
+
+  termsOf(year) {
+    return (this.course.years[year] || []).slice();
+  }
+
+  addYear(name, termCount = 3) {
+    const year = String(name || '').trim().slice(0, 20);
+    if (!year) return false;
+    if (this.course.years[year]) return false;
+    const count = clamp(Math.round(num(termCount, 3)), 1, 12);
+    this.course.years[year] = Array.from({ length: count }, (_, i) => 'Trimestre ' + (i + 1));
+    this.saveCourse();
+    return true;
+  }
+
+  removeYear(name) {
+    if (this.subjects.some((s) => s.year === name)) return false;
+    if (!this.course.years[name]) return true;
+    delete this.course.years[name];
+    this.saveCourse();
+    return true;
+  }
+
+  renameYear(oldName, newName) {
+    const year = String(newName || '').trim().slice(0, 20);
+    if (!year || year === oldName || this.course.years[year]) return false;
+    this.course.years[year] = this.course.years[oldName] || ['Trimestre 1'];
+    delete this.course.years[oldName];
+    this.subjects.forEach((s) => { if (s.year === oldName) s.year = year; });
+    this.save();
+    this.saveCourse();
+    return true;
+  }
+
+  addTerm(year, name) {
+    const term = String(name || '').trim().slice(0, 40);
+    if (!term) return false;
+    if (!this.course.years[year]) this.course.years[year] = [];
+    if (this.course.years[year].includes(term)) return false;
+    this.course.years[year].push(term);
+    this.saveCourse();
+    return true;
+  }
+
+  removeTerm(year, term) {
+    const hasItems = this.subjects.some((s) => s.year === year
+      && [...s.exams, ...s.works].some((i) => (i.term || s.term) === term));
+    if (hasItems) return false;
+    const list = this.course.years[year] || [];
+    if (list.length <= 1) return false;
+    this.course.years[year] = list.filter((t) => t !== term);
+    this.saveCourse();
+    return true;
+  }
+
+  renameTerm(year, oldTerm, newTerm) {
+    const term = String(newTerm || '').trim().slice(0, 40);
+    if (!term || term === oldTerm) return false;
+    const clash = this.subjects.some((s) => s.year === year
+      && [...s.exams, ...s.works].some((i) => (i.term || s.term) === term));
+    if (clash) return false;
+    const list = this.course.years[year] || [];
+    this.course.years[year] = list.map((t) => (t === oldTerm ? term : t));
+    this.subjects.forEach((s) => {
+      if (s.year !== year) return;
+      if (s.term === oldTerm) s.term = term;
+      [...s.exams, ...s.works].forEach((i) => { if (i.term === oldTerm) i.term = term; });
+    });
+    this.save();
+    this.saveCourse();
+    return true;
   }
 
   migrateLegacy() {
@@ -304,6 +464,7 @@ class Store {
         },
         exams: (Array.isArray(s.exams) ? s.exams : []).map((e) => ({
           id: e.id || uid(),
+          term: String(e.term || s.term || 'Trimestre 1').slice(0, 40),
           name: String(e.name || 'Examen').slice(0, 80),
           grade: parseGrade(e.grade),
           weight: parseWeight(e.weight),
@@ -312,6 +473,7 @@ class Store {
         })),
         works: (Array.isArray(s.works) ? s.works : []).map((w) => ({
           id: w.id || uid(),
+          term: String(w.term || s.term || 'Trimestre 1').slice(0, 40),
           name: String(w.name || 'Trabajo').slice(0, 80),
           grade: parseGrade(w.grade),
           weight: parseWeight(w.weight),
@@ -393,6 +555,10 @@ class App {
     this.currentView = 'inicio';
     this.currentYear = this.loadViewYear();
     this.currentTerm = this.loadViewTerm();
+    const years = this.store.yearNames();
+    if (!years.includes(this.currentYear)) this.currentYear = years[0] || this.currentYear;
+    const yearTerms = this.store.termsOf(this.currentYear);
+    if (yearTerms.length && !yearTerms.includes(this.currentTerm)) this.currentTerm = yearTerms[0];
     this.calYear = new Date().getFullYear();
     this.calMonth = new Date().getMonth();
     this.init();
@@ -431,17 +597,35 @@ class App {
     try { localStorage.setItem('peak-view-year', this.currentYear); localStorage.setItem('peak-view-term', this.currentTerm); } catch (e) { /* ignora */ }
   }
   availableYears() {
-    const set = new Set(this.store.all().map((s) => s.year));
-    set.add(this.currentYear);
-    return [...set].sort();
+    const years = this.store.yearNames();
+    if (this.currentYear && !years.includes(this.currentYear)) years.push(this.currentYear);
+    return years.sort();
   }
-  availableTerms(year) {
-    const set = new Set(this.store.all().filter((s) => s.year === year).map((s) => s.term));
-    set.add(this.currentTerm);
-    return [...set].sort();
+
+  availableTerms(year = this.currentYear) {
+    const terms = this.store.termsOf(year);
+    if (!terms.length) terms.push('Trimestre 1');
+    return terms;
   }
+
   subjectsInView() {
-    return this.store.all().filter((s) => s.year === this.currentYear && s.term === this.currentTerm);
+    return this.store.all().filter((s) => s.year === this.currentYear);
+  }
+
+  termExams(subject) {
+    return subject.exams.filter((i) => (i.term || '') === this.currentTerm);
+  }
+
+  termWorks(subject) {
+    return subject.works.filter((i) => (i.term || '') === this.currentTerm);
+  }
+
+  termItems(subject) {
+    return [...this.termExams(subject), ...this.termWorks(subject)];
+  }
+
+  subjectGrade(subject) {
+    return finalGrade({ ...subject, exams: this.termExams(subject), works: this.termWorks(subject) });
   }
 
   applyTheme(theme) {
@@ -578,43 +762,199 @@ class App {
     });
 
     const yearSel = document.getElementById('yearSelect');
-    if (yearSel) yearSel.addEventListener('change', (e) => {
-      this.currentYear = e.target.value;
-      // ensure currentTerm exists in new year
-      const terms = this.availableTerms(this.currentYear);
-      if (!terms.includes(this.currentTerm)) this.currentTerm = terms[0] || 'Trimestre 1';
-      this.saveView();
-      this.render();
-    });
+    if (yearSel) yearSel.addEventListener('change', (e) => this.setYear(e.target.value));
     const termSel = document.getElementById('termSelect');
-    if (termSel) termSel.addEventListener('change', (e) => {
-      this.currentTerm = e.target.value;
-      this.saveView();
-      this.render();
+    if (termSel) termSel.addEventListener('change', (e) => this.setTerm(e.target.value));
+
+    document.querySelectorAll('[data-open-course]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const dm = document.getElementById('desktopMenu');
+        if (dm) dm.hidden = true;
+        const sheet = document.getElementById('mobileMoreSheet');
+        if (sheet) sheet.classList.remove('is-open');
+        this.openCourseModal();
+      });
     });
-    const addYearBtn = document.getElementById('addYearBtn');
-    if (addYearBtn) addYearBtn.addEventListener('click', () => {
-      const name = window.prompt('Nombre del nuevo año escolar (ej: 2026-2027):');
-      if (!name || !name.trim()) return;
-      this.currentYear = name.trim();
-      if (!this.availableTerms(this.currentYear).includes(this.currentTerm)) {
-        this.currentTerm = 'Trimestre 1';
-      }
-      this.saveView();
-      this.render();
-    });
-    const addTermBtn = document.getElementById('addTermBtn');
-    if (addTermBtn) addTermBtn.addEventListener('click', () => {
-      const name = window.prompt('Nombre del nuevo trimestre (ej: Trimestre 2):');
-      if (!name || !name.trim()) return;
-      this.currentTerm = name.trim();
-      this.saveView();
-      this.render();
-    });
+
+    const yearForm = document.getElementById('newYearForm');
+    if (yearForm) yearForm.addEventListener('submit', (e) => { e.preventDefault(); this.createYear(); });
+    const termForm = document.getElementById('newTermForm');
+    if (termForm) termForm.addEventListener('submit', (e) => { e.preventDefault(); this.createTerm(); });
 
     this.bindMobileNav();
   }
 
+
+  setYear(year) {
+    if (!year) return;
+    this.currentYear = year;
+    const terms = this.availableTerms(year);
+    if (!terms.includes(this.currentTerm)) this.currentTerm = terms[0];
+    this.saveView();
+    this.render();
+    this.renderCourseModal();
+  }
+
+  setTerm(term) {
+    if (!term) return;
+    this.currentTerm = term;
+    this.saveView();
+    this.render();
+    this.renderCourseModal();
+  }
+
+  termItemCount(year, term) {
+    return this.store.all()
+      .filter((s) => s.year === year)
+      .reduce((acc, s) => acc + [...s.exams, ...s.works].filter((i) => (i.term || s.term) === term).length, 0);
+  }
+
+  openCourseModal() {
+    this.renderCourseModal();
+    this.openModal('courseModal');
+  }
+
+  renderCourseModal() {
+    const yearsEl = document.getElementById('courseYearsList');
+    const termsEl = document.getElementById('courseTermsList');
+    const yearLabel = document.getElementById('courseYearLabel');
+    if (!yearsEl || !termsEl) return;
+
+    if (yearLabel) yearLabel.textContent = this.currentYear;
+
+    yearsEl.innerHTML = '';
+    this.availableYears().forEach((year) => {
+      const count = this.store.all().filter((s) => s.year === year).length;
+      const li = document.createElement('li');
+      li.className = 'course-row' + (year === this.currentYear ? ' is-active' : '');
+      li.innerHTML = ''
+        + '<button class="course-row-main" type="button">'
+        + '<span class="course-row-name">' + escapeHtml(year) + '</span>'
+        + '<span class="course-row-meta">' + count + (count === 1 ? ' materia' : ' materias') + '</span>'
+        + '</button>'
+        + '<button class="icon-btn" type="button" data-rename-year aria-label="Renombrar ano"><span class="ico-pen"></span></button>'
+        + '<button class="icon-btn" type="button" data-del-year aria-label="Eliminar ano"><span class="ico-trash"></span></button>';
+      li.querySelector('.course-row-main').addEventListener('click', () => this.setYear(year));
+      li.querySelector('[data-rename-year]').addEventListener('click', () => this.renameYear(year));
+      li.querySelector('[data-del-year]').addEventListener('click', () => this.deleteYear(year));
+      yearsEl.appendChild(li);
+    });
+
+    termsEl.innerHTML = '';
+    this.availableTerms(this.currentYear).forEach((term) => {
+      const count = this.termItemCount(this.currentYear, term);
+      const li = document.createElement('li');
+      li.className = 'course-row' + (term === this.currentTerm ? ' is-active' : '');
+      li.innerHTML = ''
+        + '<button class="course-row-main" type="button">'
+        + '<span class="course-row-name">' + escapeHtml(term) + '</span>'
+        + '<span class="course-row-meta">' + count + (count === 1 ? ' evaluacion' : ' evaluaciones') + '</span>'
+        + '</button>'
+        + '<button class="icon-btn" type="button" data-rename-term aria-label="Renombrar trimestre"><span class="ico-pen"></span></button>'
+        + '<button class="icon-btn" type="button" data-del-term aria-label="Eliminar trimestre"><span class="ico-trash"></span></button>';
+      li.querySelector('.course-row-main').addEventListener('click', () => this.setTerm(term));
+      li.querySelector('[data-rename-term]').addEventListener('click', () => this.renameTerm(term));
+      li.querySelector('[data-del-term]').addEventListener('click', () => this.deleteTerm(term));
+      termsEl.appendChild(li);
+    });
+  }
+
+  createYear() {
+    const input = document.getElementById('newYearName');
+    const countInput = document.getElementById('newYearTerms');
+    const name = input ? input.value.trim() : '';
+    if (!name) {
+      toast('Escribe el nombre del año (ej. 2027-2028)', true);
+      if (input) input.focus();
+      return;
+    }
+    if (!this.store.addYear(name, countInput ? countInput.value : 3)) {
+      toast('Ese año ya existe', true);
+      return;
+    }
+    if (input) input.value = '';
+    this.setYear(name);
+    toast('Año ' + name + ' creado');
+  }
+
+  createTerm() {
+    const input = document.getElementById('newTermName');
+    const raw = input ? input.value.trim() : '';
+    const name = raw || ('Trimestre ' + (this.store.termsOf(this.currentYear).length + 1));
+    if (!this.store.addTerm(this.currentYear, name)) {
+      toast('Ese trimestre ya existe', true);
+      return;
+    }
+    if (input) input.value = '';
+    this.setTerm(name);
+    toast('Trimestre añadido');
+  }
+
+  renameYear(name) {
+    const next = window.prompt('Nuevo nombre del año escolar:', name);
+    if (!next || !next.trim() || next.trim() === name) return;
+    if (!this.store.renameYear(name, next.trim())) {
+      toast('No se pudo renombrar (¿ya existe?)', true);
+      return;
+    }
+    if (this.currentYear === name) this.currentYear = next.trim();
+    this.saveView();
+    this.render();
+    this.renderCourseModal();
+    toast('Año renombrado');
+  }
+
+  deleteYear(name) {
+    if (this.store.all().some((s) => s.year === name)) {
+      toast('Ese año tiene materias: no se puede eliminar', true);
+      return;
+    }
+    if (this.store.yearNames().length <= 1) {
+      toast('Debe quedar al menos un año', true);
+      return;
+    }
+    if (!window.confirm('¿Eliminar el año ' + name + '?')) return;
+    this.store.removeYear(name);
+    if (this.currentYear === name) this.currentYear = this.store.yearNames()[0];
+    const terms = this.availableTerms(this.currentYear);
+    if (!terms.includes(this.currentTerm)) this.currentTerm = terms[0];
+    this.saveView();
+    this.render();
+    this.renderCourseModal();
+    toast('Año eliminado');
+  }
+
+  renameTerm(term) {
+    const next = window.prompt('Nuevo nombre del trimestre:', term);
+    if (!next || !next.trim() || next.trim() === term) return;
+    if (!this.store.renameTerm(this.currentYear, term, next.trim())) {
+      toast('No se pudo renombrar (¿ya existe?)', true);
+      return;
+    }
+    if (this.currentTerm === term) this.currentTerm = next.trim();
+    this.saveView();
+    this.render();
+    this.renderCourseModal();
+    toast('Trimestre renombrado');
+  }
+
+  deleteTerm(term) {
+    const count = this.termItemCount(this.currentYear, term);
+    if (count) {
+      toast('Ese trimestre tiene evaluaciones: no se puede eliminar', true);
+      return;
+    }
+    if (!window.confirm('¿Eliminar ' + term + '?')) return;
+    if (!this.store.removeTerm(this.currentYear, term)) {
+      toast('No se puede eliminar el último trimestre', true);
+      return;
+    }
+    if (this.currentTerm === term) this.currentTerm = this.availableTerms(this.currentYear)[0];
+    this.saveView();
+    this.render();
+    this.renderCourseModal();
+    toast('Trimestre eliminado');
+  }
 
   bindMobileNav() {
     // La isla flotante se ha retirado; mantenemos accesible el menú "Más" en el topbar.
@@ -756,8 +1096,8 @@ class App {
 
   /* ----- Panel ----- */
   render() {
-    const subjects = this.store.all();
-    const grades = subjects.map((s) => finalGrade(s)).filter((g) => g !== null);
+    const subjects = this.subjectsInView();
+    const grades = subjects.map((s) => this.subjectGrade(s)).filter((g) => g !== null);
     const average = grades.length ? grades.reduce((a, b) => a + b, 0) / grades.length : null;
     const absences = subjects.reduce((acc, s) => acc + s.absences.length, 0);
     const atRisk = subjects.filter((s) => {
@@ -792,8 +1132,8 @@ class App {
     }
 
     document.getElementById('sectionSub').textContent = subjects.length
-      ? `${subjects.length} materia${subjects.length === 1 ? '' : 's'} en este curso`
-      : 'Sin materias todavía';
+      ? `${subjects.length} materia${subjects.length === 1 ? '' : 's'} · ${this.currentYear} · ${this.currentTerm}`
+      : `Sin materias en ${this.currentYear} · ${this.currentTerm}`;
 
     const pendingSub = document.getElementById('pendingSub');
     if (pendingSub) {
@@ -819,8 +1159,8 @@ class App {
       return;
     }
     el.innerHTML = subjects.map((s) => {
-      const grade = finalGrade(s);
-      const pending = [...s.exams, ...s.works].filter(isPending).length;
+      const grade = this.subjectGrade(s);
+      const pending = this.termItems(s).filter(isPending).length;
       return '<button class="summary-card" type="button" data-subject="' + s.id + '" style="--accent:' + s.color + '">'
         + '<span class="summary-name">' + escapeHtml(s.name) + '</span>'
         + '<span class="summary-grade">' + (grade === null ? '—' : grade.toFixed(2)) + '</span>'
@@ -873,9 +1213,9 @@ class App {
   }
 
   buildCard(subject) {
-    const grade = finalGrade(subject);
-    const examAvg = weightedAverage(subject.exams);
-    const workAvg = weightedAverage(subject.works);
+    const grade = this.subjectGrade(subject);
+    const examAvg = weightedAverage(this.termExams(subject));
+    const workAvg = weightedAverage(this.termWorks(subject));
     const stats = absenceStats(subject);
     const type = TYPES[normalizeType(subject.type)];
 
@@ -901,7 +1241,7 @@ class App {
         </div>
         <div class="card-grade">
           <strong>${grade === null ? '—' : grade.toFixed(2)}</strong>
-          <span>nota final</span>
+          <span>nota trimestre</span>
         </div>
       </div>
 
@@ -955,11 +1295,11 @@ class App {
   /* ----- Pendientes ----- */
   pendingItems() {
     const out = [];
-    this.store.all().filter((s) => s.year === this.currentYear && s.term === this.currentTerm).forEach((subject) => {
-      subject.exams.forEach((item) => {
+    this.store.all().filter((s) => s.year === this.currentYear).forEach((subject) => {
+      this.termExams(subject).forEach((item) => {
         if (isPending(item)) out.push({ ...item, kind: 'exam', subject });
       });
-      subject.works.forEach((item) => {
+      this.termWorks(subject).forEach((item) => {
         if (isPending(item)) out.push({ ...item, kind: 'work', subject });
       });
     });
@@ -1044,11 +1384,11 @@ class App {
   /* ----- Calendario ----- */
   calendarEvents() {
     const out = [];
-    this.store.all().filter((s) => s.year === this.currentYear && s.term === this.currentTerm).forEach((subject) => {
-      subject.exams.forEach((e) => {
+    this.store.all().filter((s) => s.year === this.currentYear).forEach((subject) => {
+      this.termExams(subject).forEach((e) => {
         if (e.date) out.push({ date: e.date, kind: 'exam', label: e.name, subject: subject, done: e.done });
       });
-      subject.works.forEach((w) => {
+      this.termWorks(subject).forEach((w) => {
         if (w.date) out.push({ date: w.date, kind: 'work', label: w.name, subject: subject, done: w.done });
       });
       subject.absences.forEach((a) => {
@@ -1137,7 +1477,7 @@ class App {
     ctx.scale(dpr, dpr);
     ctx.clearRect(0, 0, cssW, cssH);
 
-    const items = subject.exams.map((i) => ({ ...i, kind: 'exam' })).concat(subject.works.map((i) => ({ ...i, kind: 'work' })))
+    const items = this.termExams(subject).map((i) => ({ ...i, kind: 'exam' })).concat(this.termWorks(subject).map((i) => ({ ...i, kind: 'work' })))
       .filter((i) => hasGrade(i))
       .sort((a, b) => (a.date || '').localeCompare(b.date || ''));
 
@@ -1200,9 +1540,9 @@ class App {
     });
 
     if (summary) {
-      const examAvg = weightedAverage(subject.exams);
-      const workAvg = weightedAverage(subject.works);
-      const final = finalGrade(subject);
+      const examAvg = weightedAverage(this.termExams(subject));
+      const workAvg = weightedAverage(this.termWorks(subject));
+      const final = this.subjectGrade(subject);
       summary.innerHTML = ''
         + '<span class="mini-tag">Examen: ' + (examAvg === null ? '-' : examAvg.toFixed(2)) + '</span>'
         + '<span class="mini-tag">Trabajo: ' + (workAvg === null ? '-' : workAvg.toFixed(2)) + '</span>'
@@ -1298,14 +1638,14 @@ class App {
     const subject = this.store.get(this.store.currentId);
     if (!subject) return;
 
-    const grade = finalGrade(subject);
-    const examAvg = weightedAverage(subject.exams);
-    const workAvg = weightedAverage(subject.works);
+    const grade = this.subjectGrade(subject);
+    const examAvg = weightedAverage(this.termExams(subject));
+    const workAvg = weightedAverage(this.termWorks(subject));
     const stats = absenceStats(subject);
     const type = TYPES[normalizeType(subject.type)];
 
     document.getElementById('detailTitle').textContent = subject.name;
-    document.getElementById('detailSubtitle').textContent = type.short;
+    document.getElementById('detailSubtitle').textContent = `${type.short} · ${this.currentTerm}`;
     document.getElementById('detailColor').style.background = subject.color;
     document.getElementById('detailColor').style.boxShadow = `0 0 0 4px ${subject.color}22`;
 
@@ -1318,12 +1658,12 @@ class App {
     railRing.style.strokeDashoffset = String(326.73 * (1 - (grade === null ? 0 : clamp(grade / 10, 0, 1))));
     railRing.style.stroke = grade === null ? 'var(--txt-3)' : `var(--${gradeTone(grade)})`;
 
-    const pendingCount = [...subject.exams, ...subject.works].filter(isPending).length;
+    const pendingCount = this.termItems(subject).filter(isPending).length;
     document.getElementById('resFinalNote').textContent = grade === null
       ? (pendingCount
         ? `${pendingCount} pendiente${pendingCount === 1 ? '' : 's'}`
         : 'Sin evaluaciones')
-      : `${subject.exams.length} exám. · ${subject.works.length} trab.${pendingCount ? ` · ${pendingCount} pend.` : ''}`;
+      : `${this.termExams(subject).length} exám. · ${this.termWorks(subject).length} trab.${pendingCount ? ` · ${pendingCount} pend.` : ''}`;
 
     document.getElementById('railExams').textContent = examAvg === null ? '—' : examAvg.toFixed(2);
     document.getElementById('railWorks').textContent = workAvg === null ? '—' : workAvg.toFixed(2);
@@ -1383,7 +1723,7 @@ class App {
     }
 
     /* Contadores */
-    document.getElementById('tabCountItems').textContent = String(subject.exams.length + subject.works.length);
+    document.getElementById('tabCountItems').textContent = String(this.termItems(subject).length);
     document.getElementById('tabCountAbsences').textContent = String(stats.total);
 
     /* Faltas: tarjetas */
@@ -1401,8 +1741,8 @@ class App {
 
   /* ----- Evaluaciones ----- */
   combinedItems(subject) {
-    const exams = subject.exams.map((i) => ({ ...i, kind: 'exam' }));
-    const works = subject.works.map((i) => ({ ...i, kind: 'work' }));
+    const exams = this.termExams(subject).map((i) => ({ ...i, kind: 'exam' }));
+    const works = this.termWorks(subject).map((i) => ({ ...i, kind: 'work' }));
     const all = [...exams, ...works];
 
     // Primero lo pendiente (lo más próximo antes) y después lo ya entregado (más reciente antes).
@@ -1425,7 +1765,7 @@ class App {
     let items = this.combinedItems(subject);
     if (this.itemFilter !== 'all') items = items.filter((i) => i.kind === this.itemFilter);
 
-    const total = subject.exams.length + subject.works.length;
+    const total = this.termItems(subject).length;
     empty.classList.toggle('is-visible', items.length === 0);
     list.style.display = items.length ? '' : 'none';
     empty.querySelector('p').textContent = total === 0
@@ -1434,8 +1774,8 @@ class App {
 
     // El peso que se muestra es el que cuenta ahora mismo (solo entregadas con nota).
     const counted = {
-      exam: subject.exams.filter(countsForGrade),
-      work: subject.works.filter(countsForGrade)
+      exam: this.termExams(subject).filter(countsForGrade),
+      work: this.termWorks(subject).filter(countsForGrade)
     };
     const weights = {
       exam: effectiveWeights(counted.exam),
@@ -1483,8 +1823,8 @@ class App {
 
   renderWeightTotals(subject) {
     const config = [
-      { id: 'examsTotalLine', items: subject.exams, label: 'exámenes' },
-      { id: 'worksTotalLine', items: subject.works, label: 'trabajos' }
+      { id: 'examsTotalLine', items: this.termExams(subject), label: 'exámenes' },
+      { id: 'worksTotalLine', items: this.termWorks(subject), label: 'trabajos' }
     ];
 
     config.forEach(({ id, items, label }) => {
@@ -1613,7 +1953,7 @@ class App {
   updateItemHint() {
     const subject = this.store.get(this.store.currentId);
     if (!subject) return;
-    const items = this.itemKind === 'exam' ? subject.exams : subject.works;
+    const items = this.itemKind === 'exam' ? this.termExams(subject) : this.termWorks(subject);
     const editingId = document.getElementById('itemId').value;
     const others = items.filter((i) => i.id !== editingId);
     const used = others.reduce((acc, i) => acc + Math.max(0, num(i.weight, 0)), 0);
@@ -1658,7 +1998,11 @@ class App {
     const chosenKind = checkedKind ? checkedKind.value : this.itemKind;
     const kind = type === 'examenes' ? 'exam' : type === 'trabajos' ? 'work' : chosenKind;
     const items = kind === 'exam' ? subject.exams : subject.works;
-    const payload = { id: id || uid(), name, grade, weight, date, done };
+    const existing = id
+      ? (subject.exams.find((i) => i.id === id) || subject.works.find((i) => i.id === id))
+      : null;
+    const term = (existing && existing.term) || this.currentTerm;
+    const payload = { id: id || uid(), name, grade, weight, date, done, term };
 
     if (id) {
       const index = items.findIndex((i) => i.id === id);
@@ -1924,9 +2268,10 @@ class App {
   exportData() {
     const payload = {
       app: 'notas-faltas',
-      version: 3,
+      version: 4,
       exportedAt: new Date().toISOString(),
-      subjects: this.store.all()
+      subjects: this.store.all(),
+      course: this.store.course
     };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -1954,13 +2299,19 @@ class App {
 
         const imported = this.store.sanitize(list);
         if (!imported.length) throw new Error('Sin materias');
+        const importedCourse = parsed && !Array.isArray(parsed) && parsed.course
+          ? normalizeCourse(parsed.course)
+          : null;
 
         const replace = this.store.all().length === 0
           ? true
           : window.confirm('Aceptar = reemplazar tus datos actuales.\nCancelar = añadir las materias del archivo.');
 
         this.store.subjects = replace ? imported : this.store.sanitize([...this.store.all(), ...imported]);
+        if (replace && importedCourse) this.store.course = importedCourse;
+        this.store.mergeCourseWithSubjects();
         this.store.save();
+        this.store.saveCourse();
         this.render();
         toast(replace ? 'Datos importados' : 'Materias añadidas');
       } catch (err) {
@@ -2216,7 +2567,7 @@ class App {
 
   async pushToCloud(user) {
     const savedAt = Date.now();
-    const payload = { v: 1, savedAt, subjects: this.store.all() };
+    const payload = { v: 2, savedAt, subjects: this.store.all(), course: this.store.course };
 
     const { error } = await supabaseClient
       .from('user_data')
@@ -2234,17 +2585,25 @@ class App {
 
   applyCloudPayload(payload) {
     const subjects = this.store.sanitize(payload && payload.subjects);
+    const hasCourse = Boolean(payload && payload.course && payload.course.years);
+    const course = hasCourse ? normalizeCourse(payload.course) : this.store.course;
     const after = JSON.stringify(subjects);
+    const afterCourse = JSON.stringify(course);
     const savedAt = String((payload && payload.savedAt) || Date.now());
 
-    if (JSON.stringify(this.store.all()) === after) {
+    if (JSON.stringify(this.store.all()) === after && JSON.stringify(this.store.course) === afterCourse) {
       localStorage.setItem(MODIFIED_KEY, savedAt);
       return false;
     }
 
     this.store.subjects = subjects;
+    this.store.course = course;
+    this.store.mergeCourseWithSubjects();
+    const finalCourse = JSON.stringify(this.store.course);
+
     try {
       localStorage.setItem(STORAGE_KEY, after);
+      localStorage.setItem(COURSE_KEY, finalCourse);
       localStorage.setItem(MODIFIED_KEY, savedAt);
     } catch (err) {
       console.warn('No se pudieron guardar los datos descargados', err);

@@ -1406,3 +1406,37 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   color: var(--txt); font: inherit; font-size: 0.85rem; cursor: pointer;
 }
 .yt-select:focus { outline: 2px solid var(--line-2); outline-offset: 1px; }
+
+/* ---------- Modal años y trimestres ---------- */
+.course-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.1rem; }
+.course-col { display: flex; flex-direction: column; gap: 0.6rem; min-width: 0; }
+.course-title { font-size: 0.88rem; font-weight: 700; color: var(--txt-2); }
+.course-title span { color: var(--txt); }
+.course-list { list-style: none; display: flex; flex-direction: column; gap: 0.35rem; }
+.course-row {
+  display: flex; align-items: center; gap: 0.25rem;
+  padding: 0.2rem 0.3rem 0.2rem 0.15rem;
+  border: 1px solid var(--line); border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--surface-solid) 45%, transparent);
+}
+.course-row.is-active { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.course-row-main {
+  flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 0.45rem;
+  background: none; border: 0; color: inherit; font: inherit; text-align: left;
+  padding: 0.35rem 0.45rem; cursor: pointer;
+}
+.course-row-name { font-size: 0.88rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.course-row-meta { font-size: 0.72rem; color: var(--txt-3); white-space: nowrap; }
+.course-row .icon-btn { width: 1.75rem; height: 1.75rem; }
+.course-add { display: flex; gap: 0.4rem; align-items: center; margin-top: 0.2rem; flex-wrap: wrap; }
+.course-add input {
+  flex: 1; min-width: 0;
+  padding: 0.45rem 0.6rem; border-radius: var(--r-sm); border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--surface-solid) 60%, transparent);
+  color: var(--txt); font: inherit; font-size: 0.85rem;
+}
+.course-add input[type="number"] { flex: 0 0 4.2rem; text-align: center; }
+.course-add input:focus { outline: 2px solid var(--line-2); outline-offset: 1px; }
+@media (max-width: 640px) {
+  .course-grid { grid-template-columns: 1fr; }
+}
