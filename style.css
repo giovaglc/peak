@@ -1396,3 +1396,13 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .summary-card:hover { border-color: var(--line-2); transform: translateY(-2px); }
 .summary-name { font-weight: 600; font-size: 0.95rem; }
 .summary-grade { font-family: var(--font-display); font-size: 1.3rem; font-weight: 700; color: var(--txt-2); }
+
+
+/* ---------- Selector de año/trimestre ---------- */
+.year-term-bar { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
+.yt-select {
+  padding: 0.45rem 0.7rem; border-radius: var(--r-sm); border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--surface-solid) 60%, transparent);
+  color: var(--txt); font: inherit; font-size: 0.85rem; cursor: pointer;
+}
+.yt-select:focus { outline: 2px solid var(--line-2); outline-offset: 1px; }

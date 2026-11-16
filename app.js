@@ -109,6 +109,15 @@ const todayISO = () => {
   return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 };
 
+const defaultAcademicYear = () => {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = now.getMonth();
+  if (m >= 8) return y + '-' + (y + 1);
+  return (y - 1) + '-' + y;
+};
+
+
 const normalizeType = (type) => {
   if (type === 'examenes' || type === 'trabajos' || type === 'mixto') return type;
   if (type === 'solo_trabajos') return 'trabajos';
@@ -280,6 +289,8 @@ class Store {
         name: String(s.name || 'Materia').slice(0, 60),
         color: /^#[0-9a-f]{6}$/i.test(s.color || '') ? s.color : '#6366f1',
         type: normalizeType(s.type),
+        year: String(s.year || defaultAcademicYear()).slice(0, 20),
+        term: String(s.term || 'Trimestre 1').slice(0, 40),
         weights: {
           examenes: clamp(num(s.weights?.examenes, d.weights.examenes), 0, 100),
           trabajos: clamp(num(s.weights?.trabajos, d.weights.trabajos), 0, 100)
@@ -380,6 +391,8 @@ class App {
     this.itemFilter = 'all';
     this.itemKind = 'exam';
     this.currentView = 'inicio';
+    this.currentYear = this.loadViewYear();
+    this.currentTerm = this.loadViewTerm();
     this.calYear = new Date().getFullYear();
     this.calMonth = new Date().getMonth();
     this.init();
@@ -406,6 +419,29 @@ class App {
       if (saved === 'light' || saved === 'dark') return saved;
     } catch (err) { /* ignora */ }
     return window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+  }
+
+  loadViewYear() {
+    try { return localStorage.getItem('peak-view-year') || defaultAcademicYear(); } catch (e) { return defaultAcademicYear(); }
+  }
+  loadViewTerm() {
+    try { return localStorage.getItem('peak-view-term') || 'Trimestre 1'; } catch (e) { return 'Trimestre 1'; }
+  }
+  saveView() {
+    try { localStorage.setItem('peak-view-year', this.currentYear); localStorage.setItem('peak-view-term', this.currentTerm); } catch (e) { /* ignora */ }
+  }
+  availableYears() {
+    const set = new Set(this.store.all().map((s) => s.year));
+    set.add(this.currentYear);
+    return [...set].sort();
+  }
+  availableTerms(year) {
+    const set = new Set(this.store.all().filter((s) => s.year === year).map((s) => s.term));
+    set.add(this.currentTerm);
+    return [...set].sort();
+  }
+  subjectsInView() {
+    return this.store.all().filter((s) => s.year === this.currentYear && s.term === this.currentTerm);
   }
 
   applyTheme(theme) {
@@ -541,6 +577,41 @@ class App {
       t.addEventListener('click', () => this.switchView(t.dataset.view));
     });
 
+    const yearSel = document.getElementById('yearSelect');
+    if (yearSel) yearSel.addEventListener('change', (e) => {
+      this.currentYear = e.target.value;
+      // ensure currentTerm exists in new year
+      const terms = this.availableTerms(this.currentYear);
+      if (!terms.includes(this.currentTerm)) this.currentTerm = terms[0] || 'Trimestre 1';
+      this.saveView();
+      this.render();
+    });
+    const termSel = document.getElementById('termSelect');
+    if (termSel) termSel.addEventListener('change', (e) => {
+      this.currentTerm = e.target.value;
+      this.saveView();
+      this.render();
+    });
+    const addYearBtn = document.getElementById('addYearBtn');
+    if (addYearBtn) addYearBtn.addEventListener('click', () => {
+      const name = window.prompt('Nombre del nuevo año escolar (ej: 2026-2027):');
+      if (!name || !name.trim()) return;
+      this.currentYear = name.trim();
+      if (!this.availableTerms(this.currentYear).includes(this.currentTerm)) {
+        this.currentTerm = 'Trimestre 1';
+      }
+      this.saveView();
+      this.render();
+    });
+    const addTermBtn = document.getElementById('addTermBtn');
+    if (addTermBtn) addTermBtn.addEventListener('click', () => {
+      const name = window.prompt('Nombre del nuevo trimestre (ej: Trimestre 2):');
+      if (!name || !name.trim()) return;
+      this.currentTerm = name.trim();
+      this.saveView();
+      this.render();
+    });
+
     this.bindMobileNav();
   }
 
@@ -653,6 +724,8 @@ class App {
         name,
         color,
         type,
+        year: this.currentYear,
+        term: this.currentTerm,
         ...DEFAULTS(),
         weights: type === 'examenes'
           ? { examenes: 100, trabajos: 0 }
@@ -733,13 +806,14 @@ class App {
     this.renderPending();
     this.renderCalendar();
     this.renderSubjectsSummary();
+    this.renderYearTermSelectors();
     this.switchView(this.currentView);
   }
 
   renderSubjectsSummary() {
     const el = document.getElementById('subjectsSummary');
     if (!el) return;
-    const subjects = this.store.all();
+    const subjects = this.subjectsInView();
     if (!subjects.length) {
       el.innerHTML = '<p class="hint">Sin materias todavia. Crea la primera en la pestaña Materias.</p>';
       return;
@@ -761,9 +835,21 @@ class App {
     });
   }
 
+  renderYearTermSelectors() {
+    const yearSel = document.getElementById('yearSelect');
+    const termSel = document.getElementById('termSelect');
+    if (!yearSel || !termSel) return;
+
+    const years = this.availableYears();
+    yearSel.innerHTML = years.map((y) => '<option value="' + y + '"' + (y === this.currentYear ? ' selected' : '') + '>' + y + '</option>').join('');
+
+    const terms = this.availableTerms(this.currentYear);
+    termSel.innerHTML = terms.map((t) => '<option value="' + t + '"' + (t === this.currentTerm ? ' selected' : '') + '>' + t + '</option>').join('');
+  }
+
   renderSubjects() {
     const grid = document.getElementById('subjectsGrid');
-    const all = this.store.all();
+    const all = this.subjectsInView();
     const list = this.subjectFilter === 'all'
       ? all
       : all.filter((s) => normalizeType(s.type) === this.subjectFilter);
@@ -869,7 +955,7 @@ class App {
   /* ----- Pendientes ----- */
   pendingItems() {
     const out = [];
-    this.store.all().forEach((subject) => {
+    this.store.all().filter((s) => s.year === this.currentYear && s.term === this.currentTerm).forEach((subject) => {
       subject.exams.forEach((item) => {
         if (isPending(item)) out.push({ ...item, kind: 'exam', subject });
       });
@@ -958,7 +1044,7 @@ class App {
   /* ----- Calendario ----- */
   calendarEvents() {
     const out = [];
-    this.store.all().forEach((subject) => {
+    this.store.all().filter((s) => s.year === this.currentYear && s.term === this.currentTerm).forEach((subject) => {
       subject.exams.forEach((e) => {
         if (e.date) out.push({ date: e.date, kind: 'exam', label: e.name, subject: subject, done: e.done });
       });
