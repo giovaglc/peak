@@ -267,7 +267,27 @@ class Store {
   load() {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) return this.sanitize(JSON.parse(raw));
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        const legacy = Array.isArray(parsed) && parsed.some((s) =>
+          [...(Array.isArray(s.exams) ? s.exams : []), ...(Array.isArray(s.works) ? s.works : [])]
+            .some((item) => !item || !item.term));
+        const subjects = this.sanitize(parsed);
+
+        // Datos de la version anterior: las evaluaciones no tenian trimestre.
+        // Se les asigna el trimestre de su materia y se abre la app en ese
+        // trimestre para que el usuario vea sus notas nada mas actualizar.
+        if (legacy) {
+          const owner = subjects.find((s) => s.exams.length || s.works.length) || subjects[0];
+          this.legacyMigratedTerm = (owner && owner.term) || 'Trimestre 1';
+          try {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(subjects));
+          } catch (err) {
+            console.warn('No se pudo guardar la migracion de trimestres', err);
+          }
+        }
+        return subjects;
+      }
     } catch (err) {
       console.warn('No se pudo leer el almacenamiento', err);
     }
@@ -559,6 +579,16 @@ class App {
     if (!years.includes(this.currentYear)) this.currentYear = years[0] || this.currentYear;
     const yearTerms = this.store.termsOf(this.currentYear);
     if (yearTerms.length && !yearTerms.includes(this.currentTerm)) this.currentTerm = yearTerms[0];
+
+    // Al migrar datos antiguos, abrir el trimestre donde estan sus notas.
+    if (this.store.legacyMigratedTerm) {
+      const owner = this.store.all().find((s) => s.exams.length || s.works.length);
+      if (owner) {
+        if (this.store.yearNames().includes(owner.year)) this.currentYear = owner.year;
+        this.currentTerm = owner.term || this.store.legacyMigratedTerm;
+        this.saveView();
+      }
+    }
     this.calYear = new Date().getFullYear();
     this.calMonth = new Date().getMonth();
     this.init();
