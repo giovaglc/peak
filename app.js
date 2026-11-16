@@ -589,6 +589,29 @@ class App {
         this.saveView();
       }
     }
+
+    // Reparacion unica: si el trimestre guardado quedo vacio tras la
+    // actualizacion, abrir el trimestre que si tiene evaluaciones.
+    try {
+      if (!localStorage.getItem('peak-heal-terms')) {
+        localStorage.setItem('peak-heal-terms', '1');
+        const countIn = (term) => this.store.all()
+          .filter((s) => s.year === this.currentYear)
+          .reduce((acc, s) => acc + [...s.exams, ...s.works].filter((i) => (i.term || s.term) === term).length, 0);
+        if (countIn(this.currentTerm) === 0) {
+          const filled = this.store.termsOf(this.currentYear)
+            .map((term) => ({ term, count: countIn(term) }))
+            .filter((entry) => entry.count > 0)
+            .sort((a, b) => b.count - a.count);
+          if (filled.length) {
+            this.currentTerm = filled[0].term;
+            this.saveView();
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('No se pudo reparar el trimestre inicial', err);
+    }
     this.calYear = new Date().getFullYear();
     this.calMonth = new Date().getMonth();
     this.init();
