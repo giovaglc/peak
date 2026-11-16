@@ -1275,8 +1275,7 @@ class App {
       t.classList.toggle('is-active', active);
       t.setAttribute('aria-selected', String(active));
     });
-    document.querySelectorAll('[data-view]').forEach((el) => {
-      if (el.classList.contains('view-switcher')) return;
+    document.querySelectorAll('section[data-view]').forEach((el) => {
       el.style.display = (el.dataset.view === name) ? '' : 'none';
     });
   }
