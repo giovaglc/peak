@@ -97,3 +97,9 @@ En el proyecto: **Project configuration → General → Change project name**. E
 - **iPhone/Safari**: botón compartir → *Añadir a pantalla de inicio*.
 
 Se abre a pantalla completa como si fuera una app.
+
+## Publicacion y cache (GitHub Pages)
+
+- La web se sirve desde la rama `main`: https://giovaglc.github.io/peak/
+- GitHub Pages cachea 10 minutos (`Cache-Control: max-age=600`).
+- Al publicar cambios, sube la version en `version.json` y en los enlaces de `index.html` (`?v=...`). Si cambian, los navegadores se recargan solos una vez gracias al script de auto-actualizacion.

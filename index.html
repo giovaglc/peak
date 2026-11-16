@@ -11,8 +11,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Plus+Jakarta+Sans:wght@600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css">
-  <link rel="stylesheet" href="style-mobile.css">
+  <link rel="stylesheet" href="style.css?v=20261116a">
+  <link rel="stylesheet" href="style-mobile.css?v=20261116a">
   <script>
     // Evita el parpadeo de tema: fija el tema antes de pintar.
     try {
@@ -24,6 +24,29 @@
     } catch (err) {
       document.documentElement.dataset.theme = 'dark';
     }
+  </script>
+  <script>
+    // Auto-actualizacion: si se publica una version nueva, recarga una sola vez
+    // para saltarse la cache de GitHub Pages (max-age=600).
+    (function () {
+      var BUILD = '20261116a';
+      try {
+        fetch('version.json?ts=' + Date.now(), { cache: 'no-store' })
+          .then(function (r) { return r.ok ? r.json() : null; })
+          .then(function (d) {
+            if (!d || !d.build || d.build === BUILD) return;
+            var key = 'peak-reload-' + d.build;
+            try {
+              if (sessionStorage.getItem(key)) return;
+              sessionStorage.setItem(key, '1');
+            } catch (e) { /* sin sessionStorage: recarga igual */ }
+            var url = new URL(location.href);
+            url.searchParams.set('v', d.build);
+            location.replace(url.toString());
+          })
+          .catch(function () { /* sin conexion o sin version.json */ });
+      } catch (e) { /* fetch no disponible */ }
+    })();
   </script>
 </head>
 <body>
@@ -706,6 +729,6 @@
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-  <script src="app.js"></script>
+  <script src="app.js?v=20261116a"></script>
 </body>
 </html>
